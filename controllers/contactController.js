@@ -1,12 +1,14 @@
 import Message from '../models/Message.js';
 import nodemailer from 'nodemailer';
 
-// Configuración del transportador de Nodemailer usando las variables de entorno
+// Configuración corregida para evitar el Connection Timeout en Render
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: 'smtp.gmail.com',
+  port: 465,
+  secure: true, // true para el puerto 465 (SSL)
   auth: {
     user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS, // La contraseña de aplicación de 16 letras
+    pass: process.env.SMTP_PASS, // Las 16 letras amarillas
   },
 });
 
@@ -16,7 +18,7 @@ export const createMessage = async (req, res) => {
     // 1. Obtenemos los datos que el frontend envía en el 'body'
     const { name, email, message } = req.body;
 
-    // 2. Validación simple (aunque el modelo también valida)
+    // 2. Validación simple
     if (!name || !email || !message) {
       return res.status(400).json({ error: 'Todos los campos son obligatorios' });
     }
@@ -31,10 +33,10 @@ export const createMessage = async (req, res) => {
     // 4. Guardamos el nuevo mensaje en la base de datos
     const savedMessage = await newMessage.save();
 
-    // 5. Configuración del correo electrónico que te va a llegar a vos
+    // 5. Configuración del correo electrónico
     const mailOptions = {
       from: process.env.SMTP_USER,
-      to: process.env.RECIPIENT_EMAIL, // Tu correo personal donde querés enterarte
+      to: process.env.RECIPIENT_EMAIL, // Puede ser tu mismo Gmail sin problemas
       subject: `💼 Nuevo mensaje de contacto de ${name}`,
       html: `
         <div style="font-family: sans-serif; padding: 20px; color: #333;">
@@ -51,8 +53,6 @@ export const createMessage = async (req, res) => {
     };
 
     // 6. Enviamos el correo de forma asíncrona
-    // No usamos 'await' directo aquí si no queremos retrasar la respuesta al cliente,
-    // pero lo ideal es manejarlo para asegurar el envío o registrar fallos.
     transporter.sendMail(mailOptions, (error, info) => {
       if (error) {
         console.error('Error al enviar el email de notificación:', error);
@@ -61,7 +61,7 @@ export const createMessage = async (req, res) => {
       }
     });
 
-    // 7. Respondemos al frontend con éxito (código 201 = Creado)
+    // 7. Respondemos al frontend con éxito
     res.status(201).json({ 
       success: true, 
       message: '¡Mensaje enviado con éxito!', 
@@ -69,7 +69,6 @@ export const createMessage = async (req, res) => {
     });
 
   } catch (error) {
-    // Si algo falla (ej. validación de Mongoose), respondemos con un error
     console.error('Error al guardar el mensaje:', error);
     res.status(500).json({ error: 'Error interno del servidor al guardar el mensaje' });
   }
