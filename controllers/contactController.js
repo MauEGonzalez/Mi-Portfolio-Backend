@@ -1,42 +1,42 @@
 import Message from '../models/Message.js';
 import nodemailer from 'nodemailer';
 
-// Configuración corregida para evitar el Connection Timeout en Render
+// Configuración adaptada con host explícito y desactivación de restricciones de red locales
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
-  port: 465,
-  secure: true, // true para el puerto 465 (SSL)
+  port: 587,
+  secure: false, // false para puerto 587 (TLS)
   auth: {
     user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS, // Las 16 letras amarillas
+    pass: process.env.SMTP_PASS,
   },
+  tls: {
+    // Esto evita que falle si la red de Render intenta interceptar o alterar la conexión segura
+    rejectUnauthorized: false
+  }
 });
 
 // Esta función manejará la creación de un nuevo mensaje y la notificación por email
 export const createMessage = async (req, res) => {
   try {
-    // 1. Obtenemos los datos que el frontend envía en el 'body'
     const { name, email, message } = req.body;
 
-    // 2. Validación simple
     if (!name || !email || !message) {
       return res.status(400).json({ error: 'Todos los campos son obligatorios' });
     }
 
-    // 3. Creamos una nueva instancia del modelo
     const newMessage = new Message({
       name,
       email,
       message
     });
 
-    // 4. Guardamos el nuevo mensaje en la base de datos
+    // Guardamos PRIMERO en la base de datos (Garantiza que el mensaje no se pierda)
     const savedMessage = await newMessage.save();
 
-    // 5. Configuración del correo electrónico
     const mailOptions = {
       from: process.env.SMTP_USER,
-      to: process.env.RECIPIENT_EMAIL, // Puede ser tu mismo Gmail sin problemas
+      to: process.env.RECIPIENT_EMAIL,
       subject: `💼 Nuevo mensaje de contacto de ${name}`,
       html: `
         <div style="font-family: sans-serif; padding: 20px; color: #333;">
@@ -52,7 +52,8 @@ export const createMessage = async (req, res) => {
       `,
     };
 
-    // 6. Enviamos el correo de forma asíncrona
+    // Despachamos el email. Al estar fuera del flujo síncrono crítico, si Render
+    // sigue bloqueando el puerto, el cliente en el frontend recibirá igual su cartel de éxito.
     transporter.sendMail(mailOptions, (error, info) => {
       if (error) {
         console.error('Error al enviar el email de notificación:', error);
@@ -61,7 +62,7 @@ export const createMessage = async (req, res) => {
       }
     });
 
-    // 7. Respondemos al frontend con éxito
+    // Respondemos inmediatamente al usuario
     res.status(201).json({ 
       success: true, 
       message: '¡Mensaje enviado con éxito!', 
