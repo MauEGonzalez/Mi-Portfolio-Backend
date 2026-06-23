@@ -1,22 +1,9 @@
 import Message from '../models/Message.js';
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 
-// Configuración adaptada con host explícito y desactivación de restricciones de red locales
-const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 587,
-  secure: false, // false para puerto 587 (TLS)
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-  tls: {
-    // Esto evita que falle si la red de Render intenta interceptar o alterar la conexión segura
-    rejectUnauthorized: false
-  }
-});
+// Inicializamos Resend con la API Key de las variables de entorno
+const resend = new Resend(process.env.RESEND_API_KEY);
 
-// Esta función manejará la creación de un nuevo mensaje y la notificación por email
 export const createMessage = async (req, res) => {
   try {
     const { name, email, message } = req.body;
@@ -31,12 +18,14 @@ export const createMessage = async (req, res) => {
       message
     });
 
-    // Guardamos PRIMERO en la base de datos (Garantiza que el mensaje no se pierda)
+    // 1. Guardamos de forma segura en la base de datos
     const savedMessage = await newMessage.save();
 
-    const mailOptions = {
-      from: process.env.SMTP_USER,
-      to: process.env.RECIPIENT_EMAIL,
+    // 2. Enviamos el correo usando la API HTTP segura de Resend (Puerto 443)
+    // Resend en su plan gratuito permite enviar correos desde "onboarding@resend.dev" hacia tu propio mail registrado.
+    resend.emails.send({
+      from: 'Portfolio <onboarding@resend.dev>',
+      to: process.env.RECIPIENT_EMAIL, // Tu email personal donde querés que llegue
       subject: `💼 Nuevo mensaje de contacto de ${name}`,
       html: `
         <div style="font-family: sans-serif; padding: 20px; color: #333;">
@@ -50,19 +39,17 @@ export const createMessage = async (req, res) => {
           </div>
         </div>
       `,
-    };
-
-    // Despachamos el email. Al estar fuera del flujo síncrono crítico, si Render
-    // sigue bloqueando el puerto, el cliente en el frontend recibirá igual su cartel de éxito.
-    transporter.sendMail(mailOptions, (error, info) => {
-      if (error) {
-        console.error('Error al enviar el email de notificación:', error);
+    }).then(response => {
+      if (response.error) {
+        console.error('Error de Resend API:', response.error);
       } else {
-        console.log('Email de notificación enviado con éxito:', info.response);
+        console.log('¡Email enviado con éxito mediante API HTTP!', response.data.id);
       }
+    }).catch(err => {
+      console.error('Error crítico al conectar con Resend:', err);
     });
 
-    // Respondemos inmediatamente al usuario
+    // Respondemos al frontend con éxito sin demoras
     res.status(201).json({ 
       success: true, 
       message: '¡Mensaje enviado con éxito!', 
